@@ -1,0 +1,40 @@
+[project]
+name = "zionhq-agent-gateway"
+version = "0.1.0"
+description = "Zion-HQ agent-gateway: gRPC bidi endpoint for device connections (pairing, heartbeat, telemetry, faults, commands)"
+requires-python = ">=3.12"
+dependencies = [
+    "grpcio>=1.66",
+    "protobuf>=5.28",
+    "zionhq-api",
+    "arq>=0.26",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "grpcio-tools>=1.66",
+    "ruff>=0.7",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "B", "UP"]
+ignore = ["B008", "UP042"]
+# Generated protobuf/grpc code -- never hand-edited, don't lint it.
+exclude = ["zionhq/agent_pb2.py", "zionhq/agent_pb2_grpc.py", "zionhq/agent_pb2.pyi"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["gateway*", "zionhq*"]

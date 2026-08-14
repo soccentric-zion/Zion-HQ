@@ -1,0 +1,163 @@
+syntax = "proto3";
+
+package zionhq.agent;
+
+// Own, independent proto package for the HQ <-> device agent link.
+// Deliberately NOT shared with Zion-HAL/Zion-Client's `zion.stream` /
+// `hal.common` packages -- see ARCHITECTURE.md §7 ("What HQ deliberately
+// does not do") and IMPLEMENTATION_PLAN.md §2.1.
+
+service AgentLink {
+  // Device-initiated, persistent, bidirectional stream. One call = one
+  // device session. Presence (online/offline) is derived from whether this
+  // stream is open and heartbeats are current -- see ARCHITECTURE.md §3.
+  rpc Connect(stream AgentFrame) returns (stream ServerFrame);
+}
+
+// ---- device -> gateway ----
+
+message AgentFrame {
+  oneof body {
+    PairingHandshake pairing_handshake = 1;
+    Heartbeat heartbeat = 2;
+    TelemetryBatch telemetry_batch = 3;
+    FaultEvent fault_event = 4;
+    LogUploadRequest log_upload_request = 5;
+    CommandAck command_ack = 6;
+  }
+}
+
+// First frame on a new connection when the device only holds a single-use
+// pairing token (not yet a long-lived credential).
+message PairingHandshake {
+  string pairing_token = 1;
+}
+
+// First (and every subsequent) frame on a connection once the device holds
+// a long-lived credential. Also doubles as the periodic keepalive.
+message Heartbeat {
+  string device_id = 1;
+  string credential_token = 2;
+  int64 sent_at_unix_ms = 3;
+  string agent_version = 4;
+}
+
+message TelemetryBatch {
+  repeated TelemetrySample samples = 1;
+  Location location = 2; // optional; omitted (unset lat/lon) if no GNSS/network location available
+}
+
+message TelemetrySample {
+  string metric = 1;
+  double value = 2;
+  int64 recorded_at_unix_ms = 3;
+  map<string, string> tags = 4;
+}
+
+message Location {
+  double lat = 1;
+  double lon = 2;
+  double accuracy_m = 3;
+  enum Source {
+    UNKNOWN = 0;
+    GNSS = 1;
+    NETWORK = 2;
+  }
+  Source source = 4;
+  int64 recorded_at_unix_ms = 5;
+}
+
+message FaultEvent {
+  string code = 1;
+  enum Severity {
+    INFO = 0;
+    WARN = 1;
+    CRITICAL = 2;
+  }
+  Severity severity = 2;
+  string message = 3;
+  enum Kind {
+    RAISED = 0;
+    CLEARED = 1;
+  }
+  Kind kind = 4;
+  int64 at_unix_ms = 5;
+  // Set when kind == CLEARED, to correlate with the fault this clears.
+  string fault_code_ref = 6;
+}
+
+// Device asks HQ for a signed URL before uploading a log bundle or backup
+// blob -- keeps large payloads off the gRPC stream (IMPLEMENTATION_PLAN §3.4/§4.2).
+message LogUploadRequest {
+  enum Kind {
+    LOG_BUNDLE = 0;
+    BACKUP = 1;
+  }
+  Kind kind = 1;
+  int64 time_range_start_unix_ms = 2;
+  int64 time_range_end_unix_ms = 3;
+  int64 size_bytes_estimate = 4;
+}
+
+// Device's response after executing a pushed Command.
+message CommandAck {
+  string command_id = 1;
+  bool success = 2;
+  string error = 3;
+}
+
+// ---- gateway -> device ----
+
+message ServerFrame {
+  oneof body {
+    PairingResult pairing_result = 1;
+    HeartbeatAck heartbeat_ack = 2;
+    Command command = 3;
+    SignedUploadUrl signed_upload_url = 4;
+  }
+}
+
+message PairingResult {
+  bool success = 1;
+  string error = 2;
+  string device_id = 3;
+  // Long-lived credential the device must store and use for all future
+  // connections. Only ever sent once, at successful pairing.
+  string credential_token = 4;
+}
+
+message HeartbeatAck {
+  int64 server_time_unix_ms = 1;
+  int32 next_heartbeat_interval_s = 2;
+}
+
+// Fleet-management verbs pushed down to the device (IMPLEMENTATION_PLAN §4).
+message Command {
+  string command_id = 1;
+  oneof kind {
+    TakeBackupNow take_backup_now = 2;
+    Restore restore = 3;
+    FactoryReset factory_reset = 4;
+    ApplyUpdate apply_update = 5;
+  }
+}
+
+message TakeBackupNow {}
+
+message Restore {
+  string backup_download_url = 1;
+}
+
+message FactoryReset {}
+
+message ApplyUpdate {
+  string artifact_id = 1;
+  string artifact_download_url = 2;
+  string checksum_sha256 = 3;
+}
+
+message SignedUploadUrl {
+  string request_ref = 1; // echoes back which LogUploadRequest this answers
+  string upload_url = 2;
+  int64 expires_at_unix_ms = 3;
+}

@@ -1,0 +1,78 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: zionhq
+      POSTGRES_PASSWORD: zionhq
+      POSTGRES_DB: zionhq
+    ports: ["5432:5432"]
+    volumes: ["zionhq-pg-data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zionhq"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: zionhq
+      MINIO_ROOT_PASSWORD: zionhq-dev-secret
+    ports: ["9000:9000", "9001:9001"]
+    volumes: ["zionhq-minio-data:/data"]
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Self-hosted OIDC provider (IMPLEMENTATION_PLAN §1.2's day-1 default,
+  # so Phase 1 auth isn't blocked on a real vendor IdP choice). Dev-only
+  # settings: sslRequired "none" in the imported realm, KC_HOSTNAME_STRICT
+  # off so it accepts requests via localhost, LAN IP, or a LAN hostname
+  # interchangeably. Never appropriate outside a trusted local network.
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: start-dev --import-realm
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+      KC_HEALTH_ENABLED: "true"
+    ports: ["8081:8080"]  # host 8081 -- 8080 is commonly taken by other local services
+    volumes:
+      - "./keycloak/realm-zionhq.json:/opt/keycloak/data/import/realm-zionhq.json:ro"
+      # Persists Keycloak's embedded H2 DB (users, sessions, client config)
+      # across container recreation. Without this, Keycloak assigns a new
+      # random user ID on every restart, while Postgres's `User.auth_subject_id`
+      # (set on first login) keeps pointing at the old one -- next login then
+      # fails "no invited user found" even though the email is right, because
+      # the app's re-invite fallback only matches users with no linked
+      # subject yet. `--import-realm` skips re-import if the realm already
+      # exists, so this doesn't fight the volume.
+      - "zionhq-keycloak-data:/opt/keycloak/data"
+    # No container-level healthcheck -- Keycloak's minimal image doesn't
+    # reliably have curl/wget. The Makefile polls the realm's well-known
+    # config endpoint from the host instead (see `make db-up`).
+
+volumes:
+  zionhq-pg-data:
+  zionhq-minio-data:
+  zionhq-keycloak-data:
+
+# Dev login: seeded realm user admin@example.com / devpassword (see
+# infra/keycloak/realm-zionhq.json). `make seed EMAIL=admin@example.com`
+# pre-invites that same email as an admin in the app's Postgres, which is
+# what the api/app/routers/auth.py first-login matching needs to link the
+# two (see IMPLEMENTATION_PLAN §1.2's "single shared deployment" simplification).

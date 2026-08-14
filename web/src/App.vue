@@ -1,0 +1,13 @@
+<script setup lang="ts">
+import { RouterView, useRoute } from 'vue-router'
+import AppShell from '@/layouts/AppShell.vue'
+
+const route = useRoute()
+</script>
+
+<template>
+  <RouterView v-if="route.meta.public" />
+  <AppShell v-else>
+    <RouterView />
+  </AppShell>
+</template>

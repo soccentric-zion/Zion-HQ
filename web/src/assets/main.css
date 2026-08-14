@@ -1,0 +1,50 @@
+@import 'tailwindcss';
+
+/*
+ * Design tokens -- shadcn-inspired, light theme only (IMPLEMENTATION_PLAN §1.4).
+ * No dark-mode variables, no prefers-color-scheme branch: deliberate scope cut.
+ */
+@theme {
+  --color-background: oklch(99% 0 0);
+  --color-foreground: oklch(20% 0.01 260);
+
+  --color-surface: oklch(100% 0 0);
+  --color-surface-muted: oklch(97% 0.002 260);
+
+  --color-border: oklch(90% 0.004 260);
+  --color-border-strong: oklch(82% 0.004 260);
+
+  --color-muted: oklch(55% 0.01 260);
+  --color-muted-foreground: oklch(45% 0.01 260);
+
+  --color-accent: oklch(52% 0.16 264);
+  --color-accent-foreground: oklch(98% 0 0);
+  --color-accent-muted: oklch(94% 0.03 264);
+
+  --color-success: oklch(56% 0.11 155);
+  --color-success-muted: oklch(94% 0.04 155);
+  --color-warning: oklch(65% 0.13 80);
+  --color-warning-muted: oklch(94% 0.05 80);
+  --color-danger: oklch(55% 0.19 25);
+  --color-danger-muted: oklch(94% 0.05 25);
+
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+
+body {
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Restrained focus ring -- visible, not loud. */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
