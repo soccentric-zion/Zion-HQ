@@ -2,6 +2,8 @@
 # Wraps: docker compose (Postgres/MinIO/Redis), the Python venv (api +
 # agent-gateway), and the Vue frontend. See IMPLEMENTATION_PLAN.md §0.
 
+.DEFAULT_GOAL := help
+
 SHELL := /bin/bash
 CURDIR := $(shell pwd)
 VENV := $(CURDIR)/.venv
@@ -18,24 +20,8 @@ S3_ENDPOINT_URL ?= http://localhost:9000
         test test-api test-gateway test-web lint lint-api lint-gateway lint-web \
         build clean
 
-help:
-	@echo "Zion-HQ"
-	@echo ""
-	@echo "  make doctor        check prerequisites (docker, python3, node)"
-	@echo "  make install       create venv, install api/agent-gateway/web deps"
-	@echo "  make db-up         start Postgres/MinIO/Redis (docker compose)"
-	@echo "  make db-down       stop them (data persists in docker volumes)"
-	@echo "  make migrate       alembic upgrade head"
-	@echo "  make seed EMAIL=you@example.com   seed a dev tenant + admin user"
-	@echo "  make run           start db + api + agent-gateway + web in the background"
-	@echo "  make stop          stop everything 'make run' started"
-	@echo "  make logs          tail logs for the background services"
-	@echo "  make test          run api + agent-gateway + web test suites"
-	@echo "  make lint          run ruff (api, agent-gateway) + eslint/oxlint (web)"
-	@echo "  make build         build the web frontend for production"
-	@echo "  make clean         remove venv, node_modules, caches, dist, run logs"
 
-doctor:
+doctor: ## check prerequisites (docker, python3, node)
 	@command -v docker >/dev/null || { echo "docker not found"; exit 1; }
 	@command -v python3 >/dev/null || { echo "python3 not found"; exit 1; }
 	@command -v node >/dev/null || { echo "node not found"; exit 1; }
@@ -44,12 +30,12 @@ doctor:
 $(VENV)/bin/activate:
 	python3 -m venv $(VENV)
 
-install: $(VENV)/bin/activate
+install: $(VENV)/bin/activate ## create venv, install api/agent-gateway/web deps
 	$(PIP) install --quiet --upgrade pip
 	$(PIP) install --quiet -e ./api[dev] -e ./agent-gateway[dev]
 	cd web && npm install
 
-db-up:
+db-up: ## start Postgres/MinIO/Redis (docker compose)
 	$(COMPOSE) up -d
 	@echo "waiting for postgres..."
 	@until docker exec $$($(COMPOSE) ps -q postgres) pg_isready -U zionhq >/dev/null 2>&1; do sleep 1; done
@@ -64,10 +50,10 @@ db-up:
 	@until curl -sf http://localhost:8081/realms/zionhq/.well-known/openid-configuration >/dev/null 2>&1; do sleep 2; done
 	@echo "postgres, minio (bucket: zionhq), redis, keycloak (realm: zionhq) ready"
 
-db-down:
+db-down: ## stop them (data persists in docker volumes)
 	$(COMPOSE) down
 
-migrate:
+migrate: ## alembic upgrade head
 	ZIONHQ_DATABASE_URL=$(DATABASE_URL) $(VENV)/bin/alembic upgrade head
 
 seed:
@@ -79,7 +65,7 @@ seed:
 # final command instead of forking a child for it, so `$!` (captured right
 # after) is the PID of the actual long-running server, not a wrapper shell.
 # Without this, `make stop` kills the wrapper and orphans the real process.
-run: db-up migrate
+run: db-up migrate ## start db + api + agent-gateway + web in the background
 	@mkdir -p $(RUN_DIR)
 	@echo "starting api, agent-gateway, web..."
 	@(cd api && exec env ZIONHQ_DATABASE_URL=$(DATABASE_URL) ZIONHQ_S3_ENDPOINT_URL=$(S3_ENDPOINT_URL) \
@@ -103,14 +89,14 @@ run: db-up migrate
 	echo ""; \
 	echo "logs:     make logs   |   stop:  make stop"
 
-stop:
+stop: ## stop everything 'make run' started
 	-@for f in $(RUN_DIR)/*.pid; do [ -f "$$f" ] && kill $$(cat "$$f") 2>/dev/null; rm -f "$$f"; done
 	@echo "background services stopped (db left running -- 'make db-down' to stop it too)"
 
-logs:
+logs: ## tail logs for the background services
 	@tail -n 100 -f $(RUN_DIR)/api.log $(RUN_DIR)/gateway.log $(RUN_DIR)/web.log
 
-test: test-api test-gateway test-web
+test: test-api test-gateway test-web ## run api + agent-gateway + web test suites
 
 test-api:
 	cd api && ZIONHQ_TEST_DATABASE_URL=$(TEST_DATABASE_URL) ZIONHQ_S3_ENDPOINT_URL=$(S3_ENDPOINT_URL) \
@@ -123,7 +109,7 @@ test-gateway:
 test-web:
 	cd web && npx vitest run
 
-lint: lint-api lint-gateway lint-web
+lint: lint-api lint-gateway lint-web ## run ruff (api, agent-gateway) + eslint/oxlint (web)
 
 lint-api:
 	$(VENV)/bin/ruff check api
@@ -134,9 +120,20 @@ lint-gateway:
 lint-web:
 	cd web && npm run lint && npx vue-tsc --noEmit
 
-build:
+build: ## build the web frontend for production
 	cd web && npm run build
 
-clean:
+clean: ## remove venv, node_modules, caches, dist, run logs
 	rm -rf $(VENV) $(RUN_DIR) web/node_modules web/dist web/.eslintcache
 	find . -name __pycache__ -o -name "*.egg-info" -o -name .ruff_cache -o -name .pytest_cache | xargs rm -rf
+
+# ── Help ──────────────────────────────────────────────────────────────────────
+# Targets are self-documenting: text after `## ` on a target line is picked up
+# by `make help` automatically, so the listing can never drift from the rules.
+.PHONY: help
+help: ## Show this help
+	@printf '\n  \033[1m%s\033[0m\n' 'Zion-HQ'
+	@printf '  Usage: make <target> [VAR=value ...]\n'
+	@printf '\n'
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z0-9_.\/-]+:.*?## / { printf "    \033[36m%-24s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+	@printf '\n'
