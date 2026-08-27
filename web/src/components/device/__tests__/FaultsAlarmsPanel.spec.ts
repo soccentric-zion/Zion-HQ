@@ -84,7 +84,7 @@ describe('FaultsAlarmsPanel', () => {
     api.faults.list.mockResolvedValue(emptyFaults())
     api.alarms.listForDevice.mockResolvedValue(deviceAlarmResponse())
     api.alarms.clear.mockResolvedValue({
-      ...deviceAlarmResponse().items[0],
+      ...deviceAlarmResponse().items[0]!,
       state: 'resolved',
       resolved_at: '2026-07-30T12:01:00Z',
     })
