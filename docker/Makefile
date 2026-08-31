@@ -14,15 +14,21 @@
 
 IMAGE      ?= zionhq
 TAG        ?= latest
-COMPOSE    := docker compose -f docker/docker-compose.yml --env-file .env
+
+# Resolve this docker/ directory and the repo root from the Makefile's own
+# location, so the targets work no matter where make is invoked from (make -C
+# docker from the repo root, or make -f docker/Makefile from an IDE).
+DOCKER_DIR := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
+HQ_ROOT    := $(patsubst %/,%,$(dir $(DOCKER_DIR)))
+COMPOSE    := docker compose -f $(DOCKER_DIR)/docker-compose.yml --env-file $(HQ_ROOT)/.env
 
 .PHONY: build build-web up down logs ps clean
 
 build: ## Build the API + agent-gateway runtime image
-	docker build -f docker/Dockerfile -t $(IMAGE)-backend:$(TAG) .
+	docker build -f $(DOCKER_DIR)/Dockerfile -t $(IMAGE)-backend:$(TAG) $(HQ_ROOT)
 
 build-web: ## Build the web frontend image
-	docker build -f docker/Dockerfile.web -t $(IMAGE)-web:$(TAG) .
+	docker build -f $(DOCKER_DIR)/Dockerfile.web -t $(IMAGE)-web:$(TAG) $(HQ_ROOT)
 
 up: ## Bring up the full stack
 	$(COMPOSE) up -d --build
